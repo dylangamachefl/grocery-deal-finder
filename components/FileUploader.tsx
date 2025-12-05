@@ -1,5 +1,5 @@
 import React, { useCallback } from 'react';
-import { UploadCloud, FileText, X, AlertCircle } from 'lucide-react';
+import { UploadCloud, FileText, Image as ImageIcon, X, AlertCircle } from 'lucide-react';
 import { UploadedFile } from '../types';
 
 interface FileUploaderProps {
@@ -25,7 +25,9 @@ const FileUploader: React.FC<FileUploaderProps> = ({ files, onFilesSelected, onR
     if (disabled) return;
     
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      const validFiles = Array.from(e.dataTransfer.files).filter((f: File) => f.type === 'application/pdf');
+      const validFiles = Array.from(e.dataTransfer.files).filter((f: File) => 
+        f.type === 'application/pdf' || f.type.startsWith('image/')
+      );
       if (validFiles.length > 0) {
         onFilesSelected(validFiles);
       }
@@ -38,14 +40,14 @@ const FileUploader: React.FC<FileUploaderProps> = ({ files, onFilesSelected, onR
   };
 
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 flex flex-col h-full">
+    <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 flex flex-col">
       <div className="flex items-center gap-2 mb-4">
         <UploadCloud className="w-5 h-5 text-emerald-600" />
-        <h2 className="text-lg font-semibold text-slate-800">Weekly Ad PDFs</h2>
+        <h2 className="text-lg font-semibold text-slate-800">Weekly Ads</h2>
       </div>
       
       <p className="text-sm text-slate-500 mb-4">
-        Upload the weekly flyers from your local stores (PDF format).
+        Upload the weekly flyers (PDF) or screenshots (Images).
       </p>
 
       {/* Drop Zone */}
@@ -58,7 +60,7 @@ const FileUploader: React.FC<FileUploaderProps> = ({ files, onFilesSelected, onR
       >
         <input
           type="file"
-          accept="application/pdf"
+          accept="application/pdf,image/*"
           multiple
           onChange={handleFileChange}
           className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed"
@@ -66,28 +68,35 @@ const FileUploader: React.FC<FileUploaderProps> = ({ files, onFilesSelected, onR
         />
         <div className="flex flex-col items-center justify-center pointer-events-none">
           <div className="bg-emerald-100 p-3 rounded-full mb-3">
-            <FileText className="w-6 h-6 text-emerald-600" />
+            <div className="flex -space-x-1">
+                <FileText className="w-6 h-6 text-emerald-600 relative z-10" />
+                <ImageIcon className="w-6 h-6 text-emerald-500 relative -ml-3 mt-1 opacity-70" />
+            </div>
           </div>
           <p className="text-sm font-medium text-slate-700">
             Click to upload or drag and drop
           </p>
           <p className="text-xs text-slate-400 mt-1">
-            PDF files only
+            PDFs, PNGs, JPEGs supported
           </p>
         </div>
       </div>
 
       {/* File List */}
-      <div className="mt-6 flex-1 overflow-y-auto space-y-2 min-h-[100px]">
+      <div className="mt-6 space-y-3">
         {files.length === 0 && (
-          <div className="flex items-center justify-center h-full text-slate-400 text-sm italic">
+          <div className="flex items-center justify-center py-4 text-slate-400 text-sm italic bg-slate-50 rounded-lg border border-dashed border-slate-200">
             No files uploaded yet
           </div>
         )}
         {files.map((fileObj) => (
           <div key={fileObj.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg border border-slate-100 group hover:border-emerald-200 transition-colors">
             <div className="flex items-center gap-3 overflow-hidden">
-              <FileText className="w-4 h-4 text-slate-500 shrink-0" />
+              {fileObj.file.type.startsWith('image/') ? (
+                <ImageIcon className="w-4 h-4 text-slate-500 shrink-0" />
+              ) : (
+                <FileText className="w-4 h-4 text-slate-500 shrink-0" />
+              )}
               <span className="text-sm text-slate-700 truncate font-medium">{fileObj.file.name}</span>
               <span className="text-xs text-slate-400 shrink-0">
                 ({(fileObj.file.size / 1024 / 1024).toFixed(2)} MB)

@@ -230,29 +230,39 @@ const MatchCard: React.FC<{ match: GroceryMatch; onAdd: () => void; isSaved: boo
     <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-4 flex flex-col gap-4 border-l-4 border-l-emerald-500 group relative">
       <div className="flex flex-col sm:flex-row justify-between gap-4">
         <div className="flex-1">
-          <div className="flex items-center gap-2 mb-1 flex-wrap">
-            {/* Display actual product name, fall back to list item name if missing */}
-            <h4 className="font-bold text-slate-800 text-base">{match.productName || match.itemName}</h4>
-            {match.quantity && (
-              <span className="text-xs font-medium text-slate-600 bg-slate-100 px-2 py-0.5 rounded-full border border-slate-200 flex items-center gap-1">
-                <Scale className="w-3 h-3" /> {match.quantity}
+          <div className="mb-2">
+            {match.brand && (
+              <span className="text-xs font-bold text-slate-600 uppercase tracking-wider mb-0.5 block bg-slate-100 px-1.5 py-0.5 rounded w-fit">
+                {match.brand}
               </span>
             )}
-            {match.isSale && (
-              <span className="bg-red-100 text-red-700 text-[10px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wide">
-                Sale
-              </span>
-            )}
-            {match.validDates && (
-               <span className="flex items-center gap-1 text-[10px] font-medium text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">
-                 <Calendar className="w-3 h-3" /> {match.validDates}
-               </span>
-            )}
+            <div className="flex items-center gap-2 flex-wrap">
+              <h4 className="font-bold text-slate-800 text-base leading-tight">{match.productName || match.itemName}</h4>
+              
+              {match.quantity && (
+                <span className="text-xs font-medium text-slate-700 bg-slate-100 px-2 py-0.5 rounded-full border border-slate-200 flex items-center gap-1">
+                  <Scale className="w-3 h-3" /> {match.quantity}
+                </span>
+              )}
+              {match.isSale && (
+                <span className="bg-red-100 text-red-700 text-[10px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wide">
+                  Sale
+                </span>
+              )}
+            </div>
           </div>
           
           <div className="flex items-center gap-2 text-sm text-slate-500 mb-2">
             <Store className="w-3.5 h-3.5" />
             <span className="font-medium">{match.storeName}</span>
+            {match.validDates && (
+               <>
+                 <span className="text-slate-300">|</span>
+                 <span className="flex items-center gap-1 text-xs">
+                   <Calendar className="w-3 h-3" /> {match.validDates}
+                 </span>
+               </>
+            )}
           </div>
 
           <p className="text-slate-600 text-sm leading-relaxed bg-slate-50 p-2 rounded border border-slate-100">

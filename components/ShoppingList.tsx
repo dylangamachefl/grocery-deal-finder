@@ -1,5 +1,5 @@
 import React from 'react';
-import { Trash2, ShoppingCart, Store, Copy, Check, TrendingDown } from 'lucide-react';
+import { Trash2, ShoppingCart, Store, Copy, Check, TrendingDown, Scale } from 'lucide-react';
 import { GroceryMatch } from '../types';
 
 interface ShoppingListProps {
@@ -66,9 +66,10 @@ const ShoppingList: React.FC<ShoppingListProps> = ({ savedDeals, onRemove }) => 
     Object.keys(groupedDeals).forEach(store => {
       text += `--- ${store} ---\n`;
       groupedDeals[store].forEach(deal => {
+        const brand = deal.brand ? `[${deal.brand}] ` : '';
         const name = deal.productName || deal.itemName;
-        const qty = deal.quantity ? ` [${deal.quantity}]` : '';
-        text += `- ${name}${qty}: ${deal.price} (${deal.dealDescription})\n`;
+        const qty = deal.quantity ? ` (${deal.quantity})` : '';
+        text += `- ${brand}${name}${qty}: ${deal.price} (${deal.dealDescription})\n`;
       });
       text += "\n";
     });
@@ -134,19 +135,22 @@ const ShoppingList: React.FC<ShoppingListProps> = ({ savedDeals, onRemove }) => 
               return (
                 <div key={deal.id} className="p-4 flex items-start justify-between gap-4 hover:bg-slate-50 transition-colors">
                   <div>
-                    <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-semibold text-slate-800">{deal.productName || deal.itemName}</span>
-                        {deal.quantity && (
-                          <span className="text-xs font-medium text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">
-                              {deal.quantity}
-                          </span>
-                        )}
-                        <span className="text-emerald-600 font-bold text-sm bg-emerald-50 px-2 py-0.5 rounded">{deal.price}</span>
-                        {deal.originalPrice && (
-                            <span className="text-xs text-slate-400 line-through decoration-slate-400">
-                                {deal.originalPrice}
+                    <div className="flex flex-col gap-0.5">
+                        {deal.brand && <span className="text-[10px] font-bold text-slate-600 uppercase tracking-wider bg-slate-100 px-1.5 py-0.5 rounded w-fit mb-1">{deal.brand}</span>}
+                        <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-semibold text-slate-800">{deal.productName || deal.itemName}</span>
+                            {deal.quantity && (
+                            <span className="text-xs font-medium text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200 flex items-center gap-1">
+                                <Scale className="w-3 h-3" /> {deal.quantity}
                             </span>
-                        )}
+                            )}
+                            <span className="text-emerald-600 font-bold text-sm bg-emerald-50 px-2 py-0.5 rounded">{deal.price}</span>
+                            {deal.originalPrice && (
+                                <span className="text-xs text-slate-400 line-through decoration-slate-400">
+                                    {deal.originalPrice}
+                                </span>
+                            )}
+                        </div>
                     </div>
                     <p className="text-sm text-slate-500 mt-1">{deal.dealDescription}</p>
                     {deal.validDates && (
