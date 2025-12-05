@@ -1,19 +1,10 @@
 import { GoogleGenAI, Type, Schema } from "@google/genai";
 import { v4 as uuidv4 } from 'uuid';
 import { AnalysisResult, GroceryMatch, DealCategory, MasterInventoryItem, RawExtractedItem } from "../types";
+import { initializeVectorClassifier, classifyItem } from "./vectorClassifier";
+import { PARENT_CATEGORIES } from "./taxonomy";
 
-const CATEGORIES = [
-  "Produce",
-  "Meat & Seafood",
-  "Deli & Bakery",
-  "Dairy & Eggs",
-  "Pantry & Dry Goods",
-  "Snacks & Sweets",
-  "Beverages",
-  "Frozen Foods",
-  "Household & Cleaning",
-  "Personal Care & Health"
-];
+const CATEGORIES = [...PARENT_CATEGORIES];
 
 const fileToBase64 = (file: File): Promise<string> => {
   return new Promise((resolve, reject) => {
@@ -89,22 +80,31 @@ const runAgentExtractor = async (ai: GoogleGenAI, adFiles: File[]): Promise<RawE
 };
 
 // --- AGENT 2: THE LIBRARIAN (NORMALIZATION) ---
-const runAgentLibrarian = async (ai: GoogleGenAI, rawItems: RawExtractedItem[]): Promise<MasterInventoryItem[]> => {
+const runAgentLibrarian = async (
+  ai: GoogleGenAI,
+  rawItems: RawExtractedItem[],
+  onStatusUpdate?: (status: string) => void
+): Promise<MasterInventoryItem[]> => {
+  // Initialize the vector classifier (only runs once)
+  if (onStatusUpdate) onStatusUpdate("Agent 2: Initializing Vector Classifier...");
+  await initializeVectorClassifier();
+
   const prompt = `
     Role: Agent 2 - The Librarian.
-    Task: Clean, normalize, and categorize the raw inventory data.
+    Task: Clean, normalize, and extract details from the raw inventory data.
 
     Input Data:
     ${JSON.stringify(rawItems)}
 
     Instructions:
     1. Normalize Units: Convert varied text ("$3.99/lb", "3.99 per pound") into a clean format (e.g. "1 lb", "12 oz").
-    2. Categorize: Assign each item to exactly one of these categories: ${CATEGORIES.join(", ")}.
-    3. Flag High-Value: Set 'isLossLeader' to true if the deal looks exceptionally good.
-    4. Construct 'normalizedName': A clean, searchable name (e.g. "Potato Chips" from "Lays Potato Chips Party Size").
-    5. Identify 'brand': Extract the brand name (e.g. "Lay's", "Tide") if present in the raw data or inferable. If generic, use "Store Brand" or leave empty.
+    2. Flag High-Value: Set 'isLossLeader' to true if the deal looks exceptionally good.
+    3. Construct 'normalizedName': A clean, searchable name (e.g. "Potato Chips" from "Lays Potato Chips Party Size").
+    4. Identify 'brand': Extract the brand name (e.g. "Lay's", "Tide") if present in the raw data or inferable. If generic, use "Store Brand" or leave empty.
 
-    Output: A JSON array of the Master Inventory.
+    IMPORTANT: Do NOT categorize the items. This will be done by a separate system.
+
+    Output: A JSON array of the Master Inventory (without category).
   `;
 
   const response = await ai.models.generateContent({
@@ -124,27 +124,38 @@ const runAgentLibrarian = async (ai: GoogleGenAI, rawItems: RawExtractedItem[]):
             price: { type: Type.STRING },
             unit: { type: Type.STRING },
             dealDescription: { type: Type.STRING },
-            category: { type: Type.STRING, enum: CATEGORIES },
             isLossLeader: { type: Type.BOOLEAN },
             validDates: { type: Type.STRING },
             originalPrice: { type: Type.STRING, description: "Estimated original price if inferable, else null" },
           },
-          required: ["storeName", "normalizedName", "price", "category", "isLossLeader"]
+          required: ["storeName", "normalizedName", "price", "isLossLeader"]
         },
       },
     },
   });
 
   const items: Partial<MasterInventoryItem>[] = JSON.parse(cleanJson(response.text || "[]"));
+
+  // Categorize items using Vector Classifier
+  if (onStatusUpdate) onStatusUpdate("Agent 2: Categorizing items with Vector Embeddings...");
+
+  const categorizedItems = await Promise.all(items.map(async (item) => {
+    // Use normalizedName if available, else rawName
+    const textToClassify = item.normalizedName || item.rawName || "";
+    const classification = await classifyItem(textToClassify);
+
+    return {
+      ...item,
+      id: uuidv4(),
+      category: classification.parentCategory,
+      // We could store classification.subCategory if the MasterInventoryItem type supported it
+      productName: item.normalizedName, // For UI compatibility
+      itemName: item.normalizedName,    // Default fallback
+      isSale: item.isLossLeader || false, // For UI compatibility
+    };
+  }));
   
-  // Assign IDs and ensure compatibility fields
-  return items.map(item => ({
-    ...item,
-    id: uuidv4(),
-    productName: item.normalizedName, // For UI compatibility
-    itemName: item.normalizedName,    // Default fallback
-    isSale: item.isLossLeader || false, // For UI compatibility
-  })) as MasterInventoryItem[];
+  return categorizedItems as MasterInventoryItem[];
 };
 
 // --- AGENT 3: THE INTERPRETER (LIST PREP) ---
@@ -286,7 +297,7 @@ export const analyzeGroceryAds = async (
     }
 
     if (onStatusUpdate) onStatusUpdate(`Agent 2 (Librarian): Organizing ${rawItems.length} found items into aisles...`);
-    const masterInventory = await runAgentLibrarian(ai, rawItems);
+    const masterInventory = await runAgentLibrarian(ai, rawItems, onStatusUpdate);
 
     // --- Phase 2: List Prep ---
     if (onStatusUpdate) onStatusUpdate("Agent 3 (Interpreter): Refining and expanding your shopping list...");
