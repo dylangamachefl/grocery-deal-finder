@@ -3,6 +3,12 @@ import { v4 as uuidv4 } from 'uuid';
 import { AnalysisResult, GroceryMatch, DealCategory, MasterInventoryItem, RawExtractedItem } from "../types";
 import { initializeVectorClassifier, classifyItem } from "./vectorClassifier";
 import { PARENT_CATEGORIES } from "./taxonomy";
+import {
+  Agent1ResponseSchema,
+  Agent2ResponseSchema,
+  Agent3ResponseSchema,
+  Agent4ResponseSchema
+} from "../schemas";
 
 const MODEL_NAME = "gemma-3-27b-it";
 const CATEGORIES = [...PARENT_CATEGORIES];
@@ -22,9 +28,52 @@ const fileToBase64 = (file: File): Promise<string> => {
 
 const cleanJson = (text: string) => {
   if (!text) return "[]";
-  // Remove markdown code blocks if present
-  let cleaned = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-  return cleaned;
+
+  // Try to find JSON in markdown code blocks first
+  const codeBlockMatch = text.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
+  if (codeBlockMatch) {
+    return codeBlockMatch[1].trim();
+  }
+
+  // Try to find JSON object or array patterns
+  // Look for { ... } or [ ... ] that spans the content
+  const jsonObjectMatch = text.match(/(\{[\s\S]*\})/);
+  const jsonArrayMatch = text.match(/(\[[\s\S]*\])/);
+
+  if (jsonArrayMatch) {
+    return jsonArrayMatch[1].trim();
+  }
+
+  if (jsonObjectMatch) {
+    return jsonObjectMatch[1].trim();
+  }
+
+  // If no patterns found, return the trimmed text as-is
+  return text.trim();
+};
+
+// Helper function to parse and validate with Zod
+const parseWithZod = <T>(rawText: string, schema: any, agentName: string): T => {
+  console.log(`${agentName} Raw Response:`, rawText.substring(0, 200));
+
+  try {
+    const cleaned = cleanJson(rawText);
+    const parsed = JSON.parse(cleaned);
+
+    // Use Zod to validate and coerce the response
+    const result = schema.safeParse(parsed);
+
+    if (!result.success) {
+      console.error(`${agentName} Zod Validation Error:`, result.error.format());
+      throw new Error(`${agentName} response validation failed: ${result.error.message}`);
+    }
+
+    return result.data;
+  } catch (error) {
+    console.error(`${agentName} Parse Error:`, error);
+    console.error("Cleaned text:", cleanJson(rawText).substring(0, 500));
+    throw new Error(`Failed to parse ${agentName} response: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
 };
 
 // --- AGENT 1: THE EXTRACTOR (VISION) ---
@@ -51,33 +100,16 @@ const runAgentExtractor = async (ai: GoogleGenAI, adFiles: File[]): Promise<RawE
     - storeName: The store name if visible on the page (otherwise "Unknown Store").
     - validity: Any date range found (e.g., "Oct 25 - Oct 31").
 
-    Output: A JSON array of objects.
+    IMPORTANT: Return ONLY a valid JSON array of objects. Do not include any markdown formatting or code blocks.
+    Output format: [{"rawName": "...", "brand": "...", "price": "...", "unit": "...", "dealText": "...", "storeName": "...", "validity": "..."}]
   `;
 
   const response = await ai.models.generateContent({
     model: MODEL_NAME,
     contents: [{ role: "user", parts: [{ text: prompt }, ...fileParts] }],
-    config: {
-      responseMimeType: "application/json",
-      responseSchema: {
-        type: Type.ARRAY,
-        items: {
-          type: Type.OBJECT,
-          properties: {
-            rawName: { type: Type.STRING },
-            brand: { type: Type.STRING },
-            price: { type: Type.STRING },
-            unit: { type: Type.STRING },
-            dealText: { type: Type.STRING },
-            storeName: { type: Type.STRING },
-            validity: { type: Type.STRING },
-          },
-        },
-      },
-    },
   });
 
-  return JSON.parse(cleanJson(response.text || "[]"));
+  return parseWithZod<RawExtractedItem[]>(response.text || "[]", Agent1ResponseSchema, "Agent 1");
 };
 
 // --- AGENT 2: THE LIBRARIAN (NORMALIZATION) ---
@@ -105,37 +137,16 @@ const runAgentLibrarian = async (
 
     IMPORTANT: Do NOT categorize the items. This will be done by a separate system.
 
-    Output: A JSON array of the Master Inventory (without category).
+    IMPORTANT: Return ONLY a valid JSON array of objects. Do not include any markdown formatting or code blocks.
+    Output format: [{"storeName": "...", "rawName": "...", "normalizedName": "...", "brand": "...", "price": "...", "unit": "...", "dealDescription": "...", "isLossLeader": true/false, "validDates": "...", "originalPrice": "..."}]
   `;
 
   const response = await ai.models.generateContent({
     model: MODEL_NAME,
     contents: [{ role: "user", parts: [{ text: prompt }] }],
-    config: {
-      responseMimeType: "application/json",
-      responseSchema: {
-        type: Type.ARRAY,
-        items: {
-          type: Type.OBJECT,
-          properties: {
-            storeName: { type: Type.STRING },
-            rawName: { type: Type.STRING },
-            normalizedName: { type: Type.STRING },
-            brand: { type: Type.STRING },
-            price: { type: Type.STRING },
-            unit: { type: Type.STRING },
-            dealDescription: { type: Type.STRING },
-            isLossLeader: { type: Type.BOOLEAN },
-            validDates: { type: Type.STRING },
-            originalPrice: { type: Type.STRING, description: "Estimated original price if inferable, else null" },
-          },
-          required: ["storeName", "normalizedName", "price", "isLossLeader"]
-        },
-      },
-    },
   });
 
-  const items: Partial<MasterInventoryItem>[] = JSON.parse(cleanJson(response.text || "[]"));
+  const items = parseWithZod<any[]>(response.text || "[]", Agent2ResponseSchema, "Agent 2");
 
   // Categorize items using Vector Classifier
   if (onStatusUpdate) onStatusUpdate("Agent 2: Categorizing items with Vector Embeddings...");
@@ -155,7 +166,7 @@ const runAgentLibrarian = async (
       isSale: item.isLossLeader || false, // For UI compatibility
     };
   }));
-  
+
   return categorizedItems as MasterInventoryItem[];
 };
 
@@ -173,37 +184,26 @@ const runAgentInterpreter = async (ai: GoogleGenAI, userList: string): Promise<s
     2. Expansion: Convert vague terms (e.g., "sandwich stuff") into specific search queries (e.g., "Bread", "Deli Meat", "Cheese").
     3. Formatting: Return a clean list of specific keywords/items.
 
-    Output: A JSON object containing an array of strings.
+    IMPORTANT: Return ONLY a valid JSON object. Do not include any markdown formatting or code blocks.
+    Output format: {"expandedKeywords": ["keyword1", "keyword2", ...]}
   `;
 
   const response = await ai.models.generateContent({
     model: MODEL_NAME,
     contents: [{ role: "user", parts: [{ text: prompt }] }],
-    config: {
-      responseMimeType: "application/json",
-      responseSchema: {
-        type: Type.OBJECT,
-        properties: {
-          expandedKeywords: {
-            type: Type.ARRAY,
-            items: { type: Type.STRING }
-          }
-        }
-      },
-    },
   });
 
-  const result = JSON.parse(cleanJson(response.text || "{}"));
-  return result.expandedKeywords || [];
+  const result = parseWithZod<{ expandedKeywords: string[] }>(response.text || "{}", Agent3ResponseSchema, "Agent 3");
+  return result.expandedKeywords;
 };
 
 // --- AGENT 4: THE MATCHER (SEARCH & RETRIEVAL) ---
 const runAgentMatcher = async (
-  ai: GoogleGenAI, 
-  keywords: string[], 
+  ai: GoogleGenAI,
+  keywords: string[],
   inventory: MasterInventoryItem[]
 ): Promise<{ matches: GroceryMatch[], summary: string }> => {
-  
+
   const prompt = `
     Role: Agent 4 - The Matcher.
     Task: Match the User's Clean Keywords against the Master Store Inventory.
@@ -222,41 +222,18 @@ const runAgentMatcher = async (
     2. Select the Best Deals: If multiple matches exist, prioritize lowest price or loss leaders.
     3. Generate a Summary: Write a brief summary of the savings.
 
-    Output Schema:
-    - matches: Array of match objects. MUST include 'id' (from Inventory) and 'itemName' (user's keyword).
-    - summary: String.
+    IMPORTANT: Return ONLY a valid JSON object. Do not include any markdown formatting or code blocks.
+    Output format: {"matches": [{"id": "...", "itemName": "...", "dealDescription": "...", "confidence": 0.95}], "summary": "..."}
   `;
 
   const response = await ai.models.generateContent({
     model: MODEL_NAME,
     contents: [{ role: "user", parts: [{ text: prompt }] }],
-    config: {
-      responseMimeType: "application/json",
-      responseSchema: {
-        type: Type.OBJECT,
-        properties: {
-          matches: {
-            type: Type.ARRAY,
-            items: {
-              type: Type.OBJECT,
-              properties: {
-                id: { type: Type.STRING, description: "The ID of the matched item from the inventory" },
-                itemName: { type: Type.STRING, description: "The specific keyword from the User's list that triggered this match" },
-                dealDescription: { type: Type.STRING, description: "Refined description of why this is a deal" },
-                confidence: { type: Type.NUMBER },
-              },
-              required: ["id", "itemName"]
-            },
-          },
-          summary: { type: Type.STRING },
-        },
-      },
-    },
   });
 
-  const parsed = JSON.parse(cleanJson(response.text || "{}"));
-  const rawMatches = parsed.matches || [];
-  
+  const parsed = parseWithZod<{ matches: any[], summary: string }>(response.text || "{}", Agent4ResponseSchema, "Agent 4");
+  const rawMatches = parsed.matches;
+
   // Hydrate matches with full inventory data
   const hydratedMatches: GroceryMatch[] = rawMatches.map((m: any) => {
     const originalItem = inventory.find(i => i.id === m.id);
@@ -292,7 +269,7 @@ export const analyzeGroceryAds = async (
     // --- Phase 1: Ingestion ---
     if (onStatusUpdate) onStatusUpdate("Agent 1 (Vision): Scanning weekly ads for products...");
     const rawItems = await runAgentExtractor(ai, adFiles);
-    
+
     if (rawItems.length === 0) {
       throw new Error("Could not identify any products in the uploaded files. Please ensure they are clear images or PDFs.");
     }
