@@ -4,6 +4,7 @@ import { AnalysisResult, GroceryMatch, DealCategory, MasterInventoryItem, RawExt
 import { initializeVectorClassifier, classifyItem } from "./vectorClassifier";
 import { PARENT_CATEGORIES } from "./taxonomy";
 
+const MODEL_NAME = "gemma-3-27b-it";
 const CATEGORIES = [...PARENT_CATEGORIES];
 
 const fileToBase64 = (file: File): Promise<string> => {
@@ -54,7 +55,7 @@ const runAgentExtractor = async (ai: GoogleGenAI, adFiles: File[]): Promise<RawE
   `;
 
   const response = await ai.models.generateContent({
-    model: "gemini-2.5-flash",
+    model: MODEL_NAME,
     contents: [{ role: "user", parts: [{ text: prompt }, ...fileParts] }],
     config: {
       responseMimeType: "application/json",
@@ -108,7 +109,7 @@ const runAgentLibrarian = async (
   `;
 
   const response = await ai.models.generateContent({
-    model: "gemini-2.5-flash",
+    model: MODEL_NAME,
     contents: [{ role: "user", parts: [{ text: prompt }] }],
     config: {
       responseMimeType: "application/json",
@@ -176,7 +177,7 @@ const runAgentInterpreter = async (ai: GoogleGenAI, userList: string): Promise<s
   `;
 
   const response = await ai.models.generateContent({
-    model: "gemini-2.5-flash",
+    model: MODEL_NAME,
     contents: [{ role: "user", parts: [{ text: prompt }] }],
     config: {
       responseMimeType: "application/json",
@@ -227,7 +228,7 @@ const runAgentMatcher = async (
   `;
 
   const response = await ai.models.generateContent({
-    model: "gemini-2.5-flash", 
+    model: MODEL_NAME,
     contents: [{ role: "user", parts: [{ text: prompt }] }],
     config: {
       responseMimeType: "application/json",
