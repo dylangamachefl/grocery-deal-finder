@@ -1,5 +1,5 @@
 import { pipeline, env } from '@xenova/transformers';
-import { SUB_CATEGORIES, SubCategory } from '../services/taxonomy';
+import { SUB_CATEGORIES, SubCategory } from '@/services/taxonomy';
 
 // Disable local model checks - use CDN for browser environment
 env.allowLocalModels = false;

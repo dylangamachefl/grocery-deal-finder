@@ -31,7 +31,7 @@ class ClassifierWorker {
       try {
         // Create worker from the workers directory
         this.worker = new Worker(
-          new URL('../workers/classifier.worker.ts', import.meta.url),
+          new URL('@/workers/classifier.worker.ts', import.meta.url),
           { type: 'module' }
         );
 

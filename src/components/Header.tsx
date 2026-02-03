@@ -10,7 +10,7 @@ const Header: React.FC = () => {
             <ShoppingBag className="w-6 h-6 text-emerald-600" />
           </div>
           <h1 className="text-xl font-bold text-slate-800 tracking-tight flex items-center gap-2">
-            Grocery Deal Hunter <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-100 hidden sm:inline-block">Powered by Gemini</span>
+            Grocery Deal Hunter <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-100 hidden sm:inline-block">Powered by Gemma 3</span>
           </h1>
         </div>
         <div className="flex items-center text-sm text-slate-500">

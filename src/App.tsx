@@ -1,15 +1,15 @@
 import React, { useState } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { Search, AlertCircle, List, ShoppingCart, Compass, Bot } from 'lucide-react';
-import Header from './components/Header';
-import GroceryInput from './components/GroceryInput';
-import FileUploader from './components/FileUploader';
-import ResultsDisplay from './components/ResultsDisplay';
-import DealExplorer from './components/DealExplorer';
-import ShoppingList from './components/ShoppingList';
-import { analyzeGroceryAds } from './services/geminiService';
-import { AnalysisResult, UploadedFile, GroceryMatch } from './types';
-import { logger } from './utils/logger';
+import Header from '@/components/Header';
+import GroceryInput from '@/components/GroceryInput';
+import FileUploader from '@/components/FileUploader';
+import ResultsDisplay from '@/components/ResultsDisplay';
+import DealExplorer from '@/components/DealExplorer';
+import ShoppingList from '@/components/ShoppingList';
+import { analyzeGroceryAds } from '@/services/geminiService';
+import { AnalysisResult, UploadedFile, GroceryMatch } from '@/types';
+import { logger } from '@/utils/logger';
 
 const App: React.FC = () => {
   const [groceryList, setGroceryList] = useState<string>("");

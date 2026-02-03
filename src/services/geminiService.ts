@@ -1,16 +1,16 @@
 import { GoogleGenAI, Type, Schema } from "@google/genai";
 import { v4 as uuidv4 } from 'uuid';
-import { AnalysisResult, GroceryMatch, DealCategory, MasterInventoryItem, RawExtractedItem } from "../types";
-import { initializeVectorClassifier, classifyItem, classifyBatch } from "./vectorClassifier";
-import { PARENT_CATEGORIES, TAXONOMY_TREE } from "./taxonomy";
-import { createShards, createProgressTracker } from "../utils/chunking";
-import { logger } from "../utils/logger";
+import { AnalysisResult, GroceryMatch, DealCategory, MasterInventoryItem, RawExtractedItem } from "@/types";
+import { initializeVectorClassifier, classifyItem, classifyBatch } from "@/services/vectorClassifier";
+import { PARENT_CATEGORIES, TAXONOMY_TREE } from "@/services/taxonomy";
+import { createShards, createProgressTracker } from "@/utils/chunking";
+import { logger } from "@/utils/logger";
 import {
   Agent1ResponseSchema,
   Agent2ResponseSchema,
   Agent3ResponseSchema,
   Agent4ResponseSchema
-} from "../schemas";
+} from "@/schemas";
 
 const MODEL_NAME = "gemma-3-27b-it";
 const CATEGORIES = [...PARENT_CATEGORIES];
