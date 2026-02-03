@@ -1,5 +1,5 @@
-import React, { useCallback } from 'react';
-import { UploadCloud, FileText, Image as ImageIcon, X, AlertCircle } from 'lucide-react';
+import React, { useCallback, useState } from 'react';
+import { UploadCloud, FileText, Image as ImageIcon, X } from 'lucide-react';
 import { UploadedFile } from '../types';
 
 interface FileUploaderProps {
@@ -10,7 +10,8 @@ interface FileUploaderProps {
 }
 
 const FileUploader: React.FC<FileUploaderProps> = ({ files, onFilesSelected, onRemoveFile, disabled }) => {
-  
+  const [loadingSample, setLoadingSample] = useState(false);
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       onFilesSelected(Array.from(e.target.files));
@@ -19,13 +20,39 @@ const FileUploader: React.FC<FileUploaderProps> = ({ files, onFilesSelected, onR
     }
   };
 
+  const loadSampleAd = async () => {
+    // Prevent loading if already exists
+    const sampleFileName = 'sample-grocery-ad.pdf';
+    if (files.some(f => f.file.name === sampleFileName)) {
+      return; // Sample already loaded
+    }
+
+    setLoadingSample(true);
+    try {
+      const response = await fetch('./samples/sample-grocery-ad.pdf');
+      const blob = await response.blob();
+      // Create File with proper size from blob
+      const file = new File([blob], sampleFileName, {
+        type: 'application/pdf',
+        lastModified: Date.now()
+      });
+      // Note: File size will be automatically set from blob
+      onFilesSelected([file]);
+    } catch (error) {
+      console.error('Failed to load sample ad:', error);
+      alert('Failed to load sample ad. Please try uploading your own file.');
+    } finally {
+      setLoadingSample(false);
+    }
+  };
+
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
     if (disabled) return;
-    
+
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      const validFiles = Array.from(e.dataTransfer.files).filter((f: File) => 
+      const validFiles = Array.from(e.dataTransfer.files).filter((f: File) =>
         f.type === 'application/pdf' || f.type.startsWith('image/')
       );
       if (validFiles.length > 0) {
@@ -45,16 +72,22 @@ const FileUploader: React.FC<FileUploaderProps> = ({ files, onFilesSelected, onR
         <UploadCloud className="w-5 h-5 text-emerald-600" />
         <h2 className="text-lg font-semibold text-slate-800">Weekly Ads</h2>
       </div>
-      
+
       <p className="text-sm text-slate-500 mb-4">
-        Upload the weekly flyers (PDF) or screenshots (Images).
+        Upload the weekly flyers (PDF) or screenshots (Images).{' '}
+        <button
+          onClick={loadSampleAd}
+          disabled={disabled || loadingSample}
+          className="text-emerald-600 hover:text-emerald-700 underline decoration-dotted underline-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        >
+          {loadingSample ? 'Loading...' : 'Try sample ad'}
+        </button>
       </p>
 
       {/* Drop Zone */}
-      <div 
-        className={`relative border-2 border-dashed rounded-lg p-8 text-center transition-all duration-200 ${
-          disabled ? 'bg-slate-50 border-slate-200 cursor-not-allowed' : 'border-slate-300 hover:border-emerald-400 hover:bg-emerald-50 cursor-pointer'
-        }`}
+      <div
+        className={`relative border-2 border-dashed rounded-lg p-8 text-center transition-all duration-200 ${disabled ? 'bg-slate-50 border-slate-200 cursor-not-allowed' : 'border-slate-300 hover:border-emerald-400 hover:bg-emerald-50 cursor-pointer'
+          }`}
         onDrop={handleDrop}
         onDragOver={handleDragOver}
       >
@@ -69,8 +102,8 @@ const FileUploader: React.FC<FileUploaderProps> = ({ files, onFilesSelected, onR
         <div className="flex flex-col items-center justify-center pointer-events-none">
           <div className="bg-emerald-100 p-3 rounded-full mb-3">
             <div className="flex -space-x-1">
-                <FileText className="w-6 h-6 text-emerald-600 relative z-10" />
-                <ImageIcon className="w-6 h-6 text-emerald-500 relative -ml-3 mt-1 opacity-70" />
+              <FileText className="w-6 h-6 text-emerald-600 relative z-10" />
+              <ImageIcon className="w-6 h-6 text-emerald-500 relative -ml-3 mt-1 opacity-70" />
             </div>
           </div>
           <p className="text-sm font-medium text-slate-700">
