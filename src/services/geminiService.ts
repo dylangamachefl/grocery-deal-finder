@@ -378,11 +378,11 @@ export const analyzeGroceryAds = async (
   logger.log(`User List: ${groceryList}`, '📋');
   logger.log(`Files: ${adFiles.map(f => f.name).join(', ')}`, '📁');
 
-  if (!process.env.API_KEY) {
+  if (!import.meta.env.VITE_API_KEY) {
     throw new Error("API Key is missing");
   }
 
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_API_KEY });
 
   try {
     // --- Phase 1: Ingestion ---

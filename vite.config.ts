@@ -10,11 +10,6 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
-  define: {
-    'process.env': {
-      API_KEY: JSON.stringify(process.env.API_KEY),
-    },
-  },
   optimizeDeps: {
     exclude: ['@xenova/transformers'],
   },
