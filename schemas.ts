@@ -26,7 +26,7 @@ export const MasterInventoryItemPartialSchema = z.object({
     dealDescription: z.string().default(""),
     isLossLeader: z.boolean().default(false),
     validDates: z.string().default(""),
-    originalPrice: z.string().optional(),
+    originalPrice: z.string().nullable().optional(),
 });
 
 export const Agent2ResponseSchema = z.array(MasterInventoryItemPartialSchema);

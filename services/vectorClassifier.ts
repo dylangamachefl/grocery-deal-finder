@@ -1,91 +1,151 @@
-import { pipeline, env } from '@xenova/transformers';
-import { SUB_CATEGORIES, SubCategory } from './taxonomy';
+// Worker-based vector classifier
+// This module wraps the classifier web worker with a Promise-based API
 
-// Skip local checks for browser environment if needed, but Xenova handles this.
-// env.allowLocalModels = false; // Usually true by default, but we want it to fetch from CDN if not local.
-
-let extractor: any = null;
-let anchorVectors: { vector: number[]; subCategory: SubCategory }[] = [];
-let isInitialized = false;
-
-// Cosine similarity function
-function cosineSimilarity(a: number[], b: number[]): number {
-  let dotProduct = 0;
-  let normA = 0;
-  let normB = 0;
-  for (let i = 0; i < a.length; i++) {
-    dotProduct += a[i] * b[i];
-    normA += a[i] * a[i];
-    normB += b[i] * b[i];
-  }
-  return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
+interface ClassificationResult {
+  subCategory: string;
+  parentCategory: string;
+  similarity?: number;
 }
 
-export const initializeVectorClassifier = async () => {
-  if (isInitialized) return;
+interface WorkerMessage {
+  type: string;
+  payload?: any;
+  id?: string;
+}
 
-  console.log("Initializing Vector Classifier...");
+class ClassifierWorker {
+  private worker: Worker | null = null;
+  private messageId = 0;
+  private pendingRequests = new Map<string, { resolve: Function; reject: Function; timeout: NodeJS.Timeout }>();
+  private isReady = false;
+  private initPromise: Promise<void> | null = null;
 
-  // Use a small, fast model.
-  // 'Xenova/all-MiniLM-L6-v2' is a standard choice for sentence embeddings.
-  extractor = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2', {
-    quantized: true, // Use quantized model for speed and size
-  });
-
-  console.log("Model loaded. Embedding anchors...");
-
-  const subCategories = SUB_CATEGORIES;
-
-  // Embed all anchors
-  // We can batch this if needed, but for ~40 items, serial or small batch is fine.
-  // The pipeline can accept an array of strings.
-  const output = await extractor(subCategories.map(s => s.embeddingText), { pooling: 'mean', normalize: true });
-
-  // output is a Tensor. We need to convert it to array of vectors.
-  // The shape is [batch_size, hidden_size]
-  // output.tolist() returns nested arrays.
-
-  const vectors = output.tolist();
-
-  anchorVectors = vectors.map((vec: number[], index: number) => ({
-    vector: vec,
-    subCategory: subCategories[index]
-  }));
-
-  isInitialized = true;
-  console.log("Vector Classifier Initialized.");
-};
-
-export const classifyItem = async (itemText: string): Promise<{ subCategory: string; parentCategory: string }> => {
-  if (!isInitialized) {
-    await initializeVectorClassifier();
+  constructor() {
+    this.initWorker();
   }
 
-  // Embed the item
-  const output = await extractor(itemText, { pooling: 'mean', normalize: true });
-  const itemVector = output.tolist()[0]; // It returns [vector]
+  private initWorker() {
+    if (this.initPromise) return this.initPromise;
 
-  let maxSim = -1;
-  let bestMatch: SubCategory | null = null;
+    this.initPromise = new Promise((resolve, reject) => {
+      try {
+        // Create worker from the workers directory
+        this.worker = new Worker(
+          new URL('../workers/classifier.worker.ts', import.meta.url),
+          { type: 'module' }
+        );
 
-  for (const anchor of anchorVectors) {
-    const sim = cosineSimilarity(itemVector, anchor.vector);
-    if (sim > maxSim) {
-      maxSim = sim;
-      bestMatch = anchor.subCategory;
+        this.worker.onmessage = (event: MessageEvent) => {
+          const { type, payload, id } = event.data as WorkerMessage;
+
+          // Handle ready signal
+          if (type === 'READY') {
+            console.log('[VectorClassifier] Worker is ready');
+            this.isReady = true;
+            // Auto-initialize the model
+            this.sendMessage('INITIALIZE', {}).then(() => {
+              console.log('[VectorClassifier] Model initialized');
+              resolve();
+            });
+            return;
+          }
+
+          // Handle responses
+          if (id && this.pendingRequests.has(id)) {
+            const { resolve: resolveRequest, reject: rejectRequest, timeout } = this.pendingRequests.get(id)!;
+            clearTimeout(timeout);
+            this.pendingRequests.delete(id);
+
+            if (type === 'ERROR') {
+              rejectRequest(new Error(payload?.message || 'Worker error'));
+            } else {
+              resolveRequest(payload);
+            }
+          }
+        };
+
+        this.worker.onerror = (error) => {
+          console.error('[VectorClassifier] Worker error:', error);
+          reject(new Error('Worker initialization failed'));
+        };
+
+      } catch (error) {
+        console.error('[VectorClassifier] Failed to create worker:', error);
+        reject(error);
+      }
+    });
+
+    return this.initPromise;
+  }
+
+  private sendMessage(type: string, payload: any, timeoutMs = 30000): Promise<any> {
+    return new Promise((resolve, reject) => {
+      if (!this.worker) {
+        reject(new Error('Worker not initialized'));
+        return;
+      }
+
+      const id = `msg_${this.messageId++}`;
+
+      const timeout = setTimeout(() => {
+        this.pendingRequests.delete(id);
+        reject(new Error(`Worker request timeout (${timeoutMs}ms)`));
+      }, timeoutMs);
+
+      this.pendingRequests.set(id, { resolve, reject, timeout });
+
+      this.worker.postMessage({ type, payload, id });
+    });
+  }
+
+  async classifyItem(itemText: string): Promise<ClassificationResult> {
+    await this.initPromise;
+    return this.sendMessage('CLASSIFY', { text: itemText });
+  }
+
+  async classifyBatch(items: string[]): Promise<ClassificationResult[]> {
+    await this.initPromise;
+    return this.sendMessage('CLASSIFY_BATCH', { items }, 60000); // Longer timeout for batch
+  }
+
+  terminate() {
+    if (this.worker) {
+      this.worker.terminate();
+      this.worker = null;
+      this.isReady = false;
+      this.initPromise = null;
     }
   }
+}
 
-  if (bestMatch) {
-    return {
-      subCategory: bestMatch.name,
-      parentCategory: bestMatch.parent
-    };
+// Singleton instance
+let classifierInstance: ClassifierWorker | null = null;
+
+export const initializeVectorClassifier = async (): Promise<void> => {
+  if (!classifierInstance) {
+    classifierInstance = new ClassifierWorker();
   }
+  // Wait for initialization to complete
+  await classifierInstance['initPromise'];
+};
 
-  // Fallback (should theoretically not happen if lists are populated)
-  return {
-    subCategory: "Unknown",
-    parentCategory: "Pantry & Dry Goods" // Default safe fallback
-  };
+export const classifyItem = async (itemText: string): Promise<ClassificationResult> => {
+  if (!classifierInstance) {
+    await initializeVectorClassifier();
+  }
+  return classifierInstance!.classifyItem(itemText);
+};
+
+export const classifyBatch = async (items: string[]): Promise<ClassificationResult[]> => {
+  if (!classifierInstance) {
+    await initializeVectorClassifier();
+  }
+  return classifierInstance!.classifyBatch(items);
+};
+
+export const terminateClassifier = (): void => {
+  if (classifierInstance) {
+    classifierInstance.terminate();
+    classifierInstance = null;
+  }
 };
